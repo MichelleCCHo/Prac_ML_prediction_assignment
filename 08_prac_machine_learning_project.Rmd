@@ -1,0 +1,143 @@
+---
+title: "Prediction assignment writeup"
+output: html_document
+---
+### Executive Summary
+In this project, the goal is to use data from accelerometers to predict the class of exercise that the subjects performed during data collection. This is a report describing how I built my model, how I used cross validation, what I think the expected out of sample error is, and why I made the choices I did. Finally, I will also use my prediction model to predict 20 different test cases.
+
+### Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. Here, data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+
+### Data
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+The data has been downloaded to a local directory.
+
+#### Loading data
+```{r}
+## set working directory to the directory containing the files
+setwd("~/Desktop/Coursera/Data Science - JHU/8. Practical machine learning/Assignment")
+
+## load data
+trainDF <- read.csv("pml-training.csv", na.strings=c("NA", "#DIV/0!",""))
+testDF <- read.csv("pml-testing.csv", na.strings=c("NA", "#DIV/0!", ""))
+```
+
+#### Exploratory analysis/Cleaning Data
+trainDF is a dataframe with 19622 obs of 160 variables while testDF is a dataframe with 20 obs. of 160 variables.
+The outcome that I'm interested in is the "classe" variable, which is a factor with 5 levels.
+
+```{r}
+dim(trainDF)
+dim(testDF)
+
+names(trainDF)
+summary(trainDF$classe)
+```
+
+
+Looking at the summary, I can reduce the number of variables by removing ones with NA's as well as the first 7 columns which are irrelevant to movement.
+
+```{r}
+## get the indices of variables that do not have NAs or are not the first 7 columns
+features <- vector(mode="integer") 
+for (i in 8:ncol(trainDF)){ ## looping through 8th-to-nth variables of trainDF
+        ## if the ith column is complete without NA values                                 
+        if (any(is.na(trainDF[,i]))==FALSE){ 
+                ## then the ith variable gets picked and added to the feature vector
+                features <- c(features, i)    
+        }
+}
+
+## subset trainDF and testDF to retain only the variables selected in features
+trainDF <- trainDF[,features]
+testDF <- testDF[,features]
+
+dim(trainDF)
+dim(testDF)
+```
+
+Now, both datasets have only 53 variables (52 predictors + 1 outcome) instead 160. 
+
+### Model selection with cross-validation
+With the clean data in hand, I'll split the trainDF dataset into training (70%) and testing (30%) sub-dataset for model building/validation and preprocess the data by centering and scaling. 
+
+```{r}
+library(caret)
+## set seed to 1234 for reproducibility
+set.seed(1234)
+
+## split the data set into 75% training and 25% testing
+inTrain <- createDataPartition(y=trainDF$classe, p=0.70, list=FALSE)
+
+training <- trainDF[inTrain,]
+testing <- trainDF[-inTrain,]
+```
+
+Then, I'm going to use the train function to do the following in one command:
+1) center and scale the dataset using the preProcess option
+2) perform 3-fold cross-validation using trControl option
+3) fit random forest ("rf") or boosting with trees ("gbm") or linear discriminant analysis ("lda")
+
+```{r}
+## Model selection with cross-validation
+train_ctrl <- trainControl(method="cv", number=3, allowParallel=TRUE, verboseIter=FALSE)
+
+rf_fit <- train(training$classe~., data=training, preProcess=c("center", "scale"), trControl=train_ctrl, method="rf")
+gbm_fit <- train(training$classe~., data=training, preProcess=c("center", "scale"), trControl=train_ctrl, method="gbm", verbose=FALSE)
+lda_fit <- train(training$classe~., data=training, preProcess=c("center", "scale"), trControl=train_ctrl, method="lda")
+```
+
+With the models built, I will evaluate how they perform on the testing set which is the 25% remaining data on the trainDF to get an idea of out of sample error of the models.
+
+```{r}
+## Predict the testing set with the models
+rf_pred <- predict(rf_fit, testing)
+gbm_pred <- predict(gbm_fit, testing)
+lda_pred <- predict(lda_fit, testing)
+```
+
+This is how the random forest model did:
+```{r}
+## Only printing the prediction table and overall accuracy to save space
+rf_ac <- confusionMatrix(rf_pred, testing$classe)
+rf_ac[c(2,3)]
+```
+
+This is how the boosting model did:
+```{r}
+gbm_ac <- confusionMatrix(gbm_pred, testing$classe)
+gbm_ac[c(2,3)]
+```
+
+This is how the linear discriminant analysis model did:
+```{r}
+lda_ac <- confusionMatrix(lda_pred, testing$classe)
+lda_ac[c(2,3)]
+```
+
+The random forest has the best accuracy of `r rf_ac$overall[1]`, compared to the boosting accuracy of `r gbm_ac$overall[1]` and LDA accuracy of `r lda_ac$overall[1]`. 
+
+Therefore, I'm going to select the random forest model with 3-fold cross-validation as my model to predict the unlabeled test dataset
+
+### Use the random forest model to predict the unlabeled Test dataset
+```{r}
+predTest <- predict(rf_fit, testDF) 
+```
+
+I'm not printing out the results, but submission to the Coursera quiz showed that the model got 20/20=100% right on these 20 movements. 
+
+
+
+
+
+
+
